@@ -48,7 +48,7 @@ if args.count >= 2 && args[1] == "dag-test" {
 // Load config.json from CWD when present (this is how Unmineable-Mac launches us).
 // Fall back to dev-mode defaults if no config.json is found.
 let cfg = ConfigLoader.loadFromCWD()
-let host: String      = cfg?.host ?? "kp.unmineable.com"
+let host: String      = cfg?.host ?? "ethash.unmineable.com"
 let port: UInt16      = cfg?.port ?? 3333
 let workerUser: String = cfg?.user ?? "LTC:ltc1qw7ffr4hjqytukym0yvkrnsgxharjqs86z3c9wh.M5dev"
 print("[kawpow-mac] host=\(host) port=\(port) user=\(workerUser)\(cfg == nil ? "  (no config.json — using dev defaults)" : "")")

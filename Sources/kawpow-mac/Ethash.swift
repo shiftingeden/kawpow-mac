@@ -51,6 +51,22 @@ enum Ethash {
         return s
     }
 
+    // Given a seed produced by the pool, find the epoch that generates it
+    // by iterating keccak256 from zeros. Pools using ethash/kawpow stratum
+    // sometimes send a `height` that does not map to the on-chain block
+    // height we'd expect (it can be a pool-internal counter, or a different
+    // chain entirely). The seed is authoritative, so we recover the real
+    // epoch from it. Returns nil if not found within `maxSearch`.
+    static func epochFromSeed(_ targetSeed: [UInt8], maxSearch: Int = 5000) -> UInt64? {
+        var s = [UInt8](repeating: 0, count: 32)
+        if s == targetSeed { return 0 }
+        for i in 1...maxSearch {
+            s = Keccak.keccak256(s)
+            if s == targetSeed { return UInt64(i) }
+        }
+        return nil
+    }
+
     // ─── Light cache generation ────────────────────────────────────────────
     // cache[0] = keccak_512(seed); cache[i] = keccak_512(cache[i-1]).
     // Then CACHE_ROUNDS of RandMemoHash mixing.

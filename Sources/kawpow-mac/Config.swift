@@ -11,7 +11,7 @@ struct RuntimeConfig: Decodable {
     let deviceNumber: Int?
     let intensity: Int?
 
-    var host: String { chosenURL ?? "kp.unmineable.com" }
+    var host: String { chosenURL ?? "ethash.unmineable.com" }
     var port: UInt16 { UInt16(chosenPort ?? 3333) }
 }
 

@@ -127,18 +127,21 @@ struct GeneratedKernel {
 func generateKernelSource(progSeed: UInt64) -> GeneratedKernel {
     var rnd = initKiss99(progSeed: progSeed)
 
-    // Generate a permutation of [0..PROGPOW_REGS-1] for "mix sequence destinations"
-    // and another for "cache load sources". Fisher–Yates with rnd().
-    func shuffle(_ count: Int) -> [Int] {
-        var a = Array(0..<count)
-        for i in 1..<count {
-            let j = Int(rnd.next() % UInt32(i + 1))
-            a.swapAt(i, j)
-        }
-        return a
+    // ProgPoW spec: mix_seq_dst and mix_seq_cache are shuffled INTERLEAVED,
+    // walking i from N-1 down to 1, two rnd() calls per i. (Doing dst fully
+    // then cache fully would consume the same number of rnd() calls but in
+    // the wrong order, leaving every downstream math/merge op reading a
+    // shifted slice of the kiss99 stream → divergent hashes vs. the pool.)
+    var mixSeqDst   = Array(0..<KawPow.PROGPOW_REGS)
+    var mixSeqCache = Array(0..<KawPow.PROGPOW_REGS)
+    var i = KawPow.PROGPOW_REGS - 1
+    while i > 0 {
+        let jDst   = Int(rnd.next() % UInt32(i + 1))
+        mixSeqDst.swapAt(i, jDst)
+        let jCache = Int(rnd.next() % UInt32(i + 1))
+        mixSeqCache.swapAt(i, jCache)
+        i -= 1
     }
-    let mixSeqDst   = shuffle(KawPow.PROGPOW_REGS)
-    let mixSeqCache = shuffle(KawPow.PROGPOW_REGS)
     var dstIdx = 0
     var cacheIdx = 0
 

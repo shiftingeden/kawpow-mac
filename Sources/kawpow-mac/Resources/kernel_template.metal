@@ -226,16 +226,26 @@ kernel void search(
 
     if(result <= target)
     {
-        results[1] = mix_hash_digest[0];
-        results[2] = mix_hash_digest[1];
-        results[3] = mix_hash_digest[2];
-        results[4] = mix_hash_digest[3];
-        results[5] = mix_hash_digest[4];
-        results[6] = mix_hash_digest[5];
-        results[7] = mix_hash_digest[6];
-        results[8] = mix_hash_digest[7];
-
-        stop[0]=stop[0]+1;
-        results[0] = gid;
+        // Only the FIRST winning thread in this dispatch writes its result.
+        // Without this guard two threads can both reach the result-write block
+        // and interleave: thread A's gid ends up paired with thread B's
+        // mix_hash bytes → host submits a Frankenstein share → pool replies
+        // "Invalid share" because its computed mix_hash for our nonce does
+        // not match the one we sent. The atomic counter (resultsIndex) is
+        // already supplied as a kernel argument; host code zeroes it per
+        // dispatch.
+        uint claimed = atomic_fetch_add_explicit(resultsIndex, 1u, memory_order_relaxed);
+        if (claimed == 0u) {
+            results[0] = gid;
+            results[1] = mix_hash_digest[0];
+            results[2] = mix_hash_digest[1];
+            results[3] = mix_hash_digest[2];
+            results[4] = mix_hash_digest[3];
+            results[5] = mix_hash_digest[4];
+            results[6] = mix_hash_digest[5];
+            results[7] = mix_hash_digest[6];
+            results[8] = mix_hash_digest[7];
+            stop[0] = 1u;
+        }
     }
 }

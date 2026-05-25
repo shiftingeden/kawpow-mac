@@ -35,6 +35,18 @@ final class Miner {
     private var lastTargetUInt64: UInt64 = 0
     private var lastDagElements: UInt32 = 0
 
+    // Seed→epoch lookup cache (seed_hash_hex → epoch). The first time we see a
+    // seed we walk keccak256 from zeros to find which iteration produces it
+    // (≈1-2s for epoch ~800). Subsequent jobs with the same seed are O(1).
+    private var seedEpochCache: [String: UInt64] = [:]
+
+    // PSO cache keyed by prog_seed. Per-epoch the only thing that changes
+    // between jobs is prog_seed (= blockHeight / KAWPOW_PERIOD) and that
+    // bumps every ~3 jobs. Caching avoids re-compiling Metal source we
+    // already have a pipeline for. Cleared on epoch change since target
+    // and dagElements are baked into the compiled kernel.
+    private var psoCache: [UInt64: MTLComputePipelineState] = [:]
+
     // Buffers re-used across dispatches
     private var jobBlobBuf: MTLBuffer?     // 10 uints
     private var resultsBuf: MTLBuffer?     // 64 uints
@@ -69,12 +81,38 @@ final class Miner {
         jobLock.lock()
         defer { jobLock.unlock() }
         currentJob = job
-        let epoch = Ethash.epoch(forBlockHeight: job.blockHeight)
+
+        // The pool's authoritative epoch comes from its seed hash, not the
+        // height field (which on ethash.unmineable.com is a pool-internal
+        // counter, not the on-chain block number we'd expect).
+        let epoch: UInt64
+        if let cached = seedEpochCache[job.seedHashHex] {
+            epoch = cached
+        } else if !job.seedHashHex.isEmpty,
+                  case let seedBytes = hexToBytes(job.seedHashHex),
+                  seedBytes.count == 32,
+                  let derived = Ethash.epochFromSeed(seedBytes, maxSearch: 2000) {
+            epoch = derived
+            seedEpochCache[job.seedHashHex] = derived
+            print("[miner] seed-derived epoch=\(epoch) (pool's height field was \(job.blockHeight))")
+        } else {
+            epoch = Ethash.epoch(forBlockHeight: job.blockHeight)
+            print("[miner] could not recover epoch from seed within 2000; fallback height/epoch_length = \(epoch)")
+        }
+
         if epoch != currentEpoch {
-            print("[miner] epoch change: \(currentEpoch) → \(epoch); rebuilding DAG…")
+            let dagBytes = Ethash.datasetSize(epoch: epoch)
+            // Soft cap: refuse DAGs that won't fit comfortably on a 16 GB Mac.
+            // 10 GB allows epoch ~870 ethash DAG (~7.9 GB) plus other allocations.
+            print("[miner] epoch change: \(currentEpoch) → \(epoch); DAG = \(dagBytes) bytes (\(String(format: "%.2f", Double(dagBytes) / 1_073_741_824)) GB)")
+            if dagBytes > 10 * 1024 * 1024 * 1024 {
+                print("[miner] ABORT: DAG > 10 GB — won't fit. Pool likely mines a chain too big for this machine.")
+                dagOut = nil
+                return
+            }
             currentEpoch = epoch
+            psoCache.removeAll(keepingCapacity: false)  // PSO bakes in dagElements
             do {
-                // Full ethash DAG for this epoch (no cap). ~5.6 GB for epoch 584.
                 dagOut = try buildDAG(device: device, epoch: epoch, dagBytesCap: nil)
             } catch {
                 print("[miner] DAG build failed: \(error)")
@@ -82,22 +120,34 @@ final class Miner {
                 return
             }
         }
-        // Per-job: target, PROGPOW_DAG_ELEMENTS (= dataset_items / 16 since each "element"
-        // spans PROGPOW_LANES dag_t entries), per-epoch search kernel.
         guard let dag = dagOut else { return }
-        let dagElements = dag.dagNumItems / 16  // PROGPOW_LANES = 16
+        let dagElements = dag.dagNumItems / 16
         lastDagElements = dagElements
-        lastTargetUInt64 = Target.kernelTargetFromPoolTarget(job.shareTargetHex)
-        do {
-            searchPSO = try compileSearchKernel(
-                progSeed: KawPow.progSeed(forBlockHeight: job.blockHeight),
-                target: lastTargetUInt64,
-                dagElements: dagElements
-            )
-            print("[miner] kernel compiled for prog_seed=\(KawPow.progSeed(forBlockHeight: job.blockHeight)) targetUL=0x\(String(lastTargetUInt64, radix: 16)) dagElements=\(dagElements)")
-        } catch {
-            print("[miner] kernel compile failed: \(error)")
-            searchPSO = nil
+        let newTarget = Target.kernelTargetFromPoolTarget(job.shareTargetHex)
+        if newTarget != lastTargetUInt64 && lastTargetUInt64 != 0 {
+            // Target bakes into the kernel — invalidate cache on change.
+            print("[miner] target changed 0x\(String(lastTargetUInt64, radix: 16)) → 0x\(String(newTarget, radix: 16)); flushing PSO cache")
+            psoCache.removeAll(keepingCapacity: true)
+        }
+        lastTargetUInt64 = newTarget
+
+        let progSeed = KawPow.progSeed(forBlockHeight: job.blockHeight)
+        if let cached = psoCache[progSeed] {
+            searchPSO = cached
+        } else {
+            do {
+                let pso = try compileSearchKernel(
+                    progSeed: progSeed,
+                    target: lastTargetUInt64,
+                    dagElements: dagElements
+                )
+                psoCache[progSeed] = pso
+                searchPSO = pso
+                print("[miner] kernel compiled for prog_seed=\(progSeed) targetUL=0x\(String(lastTargetUInt64, radix: 16)) dagElements=\(dagElements) (cache size \(psoCache.count))")
+            } catch {
+                print("[miner] kernel compile failed: \(error)")
+                searchPSO = nil
+            }
         }
         allocBuffersIfNeeded()
         loadJobBlob(headerHashHex: job.headerHashHex)
