@@ -7,6 +7,36 @@ setbuf(stdout, nil) // unbuffered output so logs flush in real time
 runSelfTests()
 _ = keccak800CrossCheck()
 
+// CLI: `kawpow-mac dag-crosscheck` — build a small DAG via the Metal kernel,
+// then compute the same items on CPU via calcDatasetItemCPU and compare.
+if CommandLine.arguments.contains("dag-crosscheck") {
+    guard let device = MTLCreateSystemDefaultDevice() else { print("no device"); exit(1) }
+    print("[dag-crosscheck] device=\(device.name) — building epoch 0 DAG capped at 16 MB")
+    // 16 MB / 64 = 262144 items — enough variation to catch bugs
+    let out = try buildDAG(device: device, epoch: 0, dagBytesCap: 16 * 1024 * 1024)
+    let cachePtr = out.cache.contents().assumingMemoryBound(to: UInt8.self)
+    let dagPtr = out.dag.contents().assumingMemoryBound(to: UInt32.self)
+    let indicesToCheck: [UInt32] = [0, 1, 7, 100, 1_000, 50_000, out.dagNumItems - 1]
+    var allMatch = true
+    for idx in indicesToCheck {
+        let cpu = calcDatasetItemCPU(cache: cachePtr, cacheNumNodes: out.cacheNumNodes, index: idx)
+        var gpu = [UInt32](repeating: 0, count: 16)
+        for k in 0..<16 { gpu[k] = dagPtr[Int(idx) * 16 + k] }
+        let ok = cpu == gpu
+        let cpuHex = cpu.prefix(4).map { String(format: "%08x", $0) }.joined(separator: " ")
+        let gpuHex = gpu.prefix(4).map { String(format: "%08x", $0) }.joined(separator: " ")
+        print("[dag-crosscheck] idx=\(idx) \(ok ? "✓" : "✗")  cpu[0..4]=\(cpuHex)  gpu[0..4]=\(gpuHex)")
+        if !ok {
+            allMatch = false
+            for k in 0..<16 where cpu[k] != gpu[k] {
+                print("[dag-crosscheck]   word[\(k)] cpu=\(String(format: "%08x", cpu[k])) gpu=\(String(format: "%08x", gpu[k]))")
+            }
+        }
+    }
+    print(allMatch ? "[dag-crosscheck] ALL ITEMS MATCH ✓" : "[dag-crosscheck] DIVERGENCE — fill_dag.metal disagrees with CPU spec")
+    exit(allMatch ? 0 : 2)
+}
+
 // CLI: `kawpow-mac dag-test [epoch] [dagBytesCap]`
 // Builds the DAG to verify M4 end-to-end without entering the mining loop.
 let args = CommandLine.arguments
