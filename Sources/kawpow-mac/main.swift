@@ -2,6 +2,8 @@ import Foundation
 
 setbuf(stdout, nil) // unbuffered output so logs flush in real time
 
+runSelfTests()
+
 // Milestone 2: + target conversion + submit-harness.
 // On the first job, we (a) compute the kernel target and print it, and (b) send a
 // deliberately invalid mining.submit so the pool tells us whether our wire format is good.
@@ -35,19 +37,13 @@ client.onNotify = { jobId, headerHash, seedHash, shareTarget, cleanJobs, blockHe
     print("[main]   target=\(shareTarget)")
     print("[main]   kernel target literal=\(Target.metalLiteral(for: shareTarget))")
 
-    if !submitted {
-        submitted = true
-        // Send a deliberately invalid share — we just want the pool's response so we can
-        // confirm our wire format. A valid submit is rejected with "invalid share" or similar.
-        let fakeNonce  = "0xdeadbeefcafebabe"
-        let fakeMixHash = String(repeating: "00", count: 32)
-        print("[main] sending FAKE submit to probe wire format…")
-        client.submitShare(workerName: workerUser,
-                           jobId: jobId,
-                           nonce: fakeNonce,
-                           headerHash: "0x" + headerHash,
-                           mixHash: "0x" + fakeMixHash)
-    }
+    let seed = KawPow.progSeed(forBlockHeight: blockHeight)
+    print("[main]   prog_seed = \(seed) (KAWPOW_PERIOD=\(KawPow.KAWPOW_PERIOD))")
+    let gen = generateKernelSource(progSeed: seed)
+    print("[main]   RANDOM_MATH first lines:")
+    gen.randomMath.split(separator: "\n").prefix(6).forEach { print("[main]     \($0)") }
+    print("[main]   DATA_LOADS:")
+    gen.dataLoads.split(separator: "\n").forEach { print("[main]     \($0)") }
 }
 
 client.onError = { err in
