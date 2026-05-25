@@ -2,6 +2,8 @@
 
 A native KawPow miner for Apple Silicon Macs (M1 through M5+), written in Swift + Metal.
 
+**[⬇ Download the latest release](https://github.com/shiftingeden/kawpow-mac/releases/latest)** — pre-built `arm64` binary + Metal shader bundle + sample config. No Swift toolchain needed; just unzip, edit `config.json` with your wallet address, run.
+
 ## Why
 
 `thinminerpro` — the closed-source binary used by Unmineable-Mac — does not submit shares on M3+
