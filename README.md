@@ -130,10 +130,15 @@ To stop: `Ctrl-C` (or just close the terminal).
 git clone https://github.com/shiftingeden/Unmineable-Mac.git
 cd Unmineable-Mac
 npm install
-npm run fetch:miners   # downloads XMRig + clones+builds this miner
+npm run fetch:miners
 npm run build:app
 open out/Unmineable-Mac.app
 ```
+
+`npm run fetch:miners` downloads XMRig (CPU miner) for both
+architectures, downloads the Intel Thinminerpro fallback, and clones
++ builds the in-repo `kawpow-mac` GPU miner. `npm run build:app`
+then assembles the Svelte UI + Go runtime into `out/Unmineable-Mac.app`.
 
 In the app:
 1. Pick a coin (LTC, RVN, anything unMineable supports)
