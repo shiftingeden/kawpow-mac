@@ -121,7 +121,14 @@ final class Miner {
             }
         }
         guard let dag = dagOut else { return }
-        let dagElements = dag.dagNumItems / 16
+        // PROGPOW_DAG_ELEMENTS = DAG_BYTES / (PROGPOW_LANES * sizeof(dag_t))
+        //                      = DAG_BYTES / (16 * 16)
+        //                      = DAG_BYTES / 256
+        // and DAG_BYTES = dagNumItems * 64, so dagElements = dagNumItems / 4.
+        // (Previously divided by 16 here, which caused the kernel to address only
+        // the first 1/4 of the DAG — so our hashes used the wrong DAG values and
+        // every share came back "Invalid share" from the pool.)
+        let dagElements = dag.dagNumItems / 4
         lastDagElements = dagElements
         // Debug-only override: if KAWPOW_FORCED_TARGET is set in the environment
         // (hex, with or without "0x"), use that uint64 as the kernel-side
@@ -308,15 +315,17 @@ final class Miner {
             let nonce32 = r[0]
             // Reconstruct the full 64-bit nonce: high32 = (baseNonce >> 32), low32 = nonce32
             let fullNonce = (baseNonce & 0xFFFFFFFF00000000) | UInt64(nonce32)
-            // Submit mix_hash with bytes per-uint32 in BIG-endian order — this is what the
-            // standard ProgPoW/KawPow stratum wire format expects (each 4-byte word's MSB first).
+            // Submit mix_hash with bytes per-uint32 in LITTLE-endian order — KawPow's
+            // standard wire format on most pools matches the in-memory layout where
+            // each uint32 word is laid out LSB-first. (We previously tried BE here;
+            // every submit came back "Invalid share" on ethash.unmineable.com.)
             var mixBytes = [UInt8](repeating: 0, count: 32)
             for i in 0..<8 {
                 let w = r[1 + i]
-                mixBytes[i*4 + 0] = UInt8((w >> 24) & 0xFF)
-                mixBytes[i*4 + 1] = UInt8((w >> 16) & 0xFF)
-                mixBytes[i*4 + 2] = UInt8((w >> 8) & 0xFF)
-                mixBytes[i*4 + 3] = UInt8(w & 0xFF)
+                mixBytes[i*4 + 0] = UInt8(w & 0xFF)
+                mixBytes[i*4 + 1] = UInt8((w >> 8) & 0xFF)
+                mixBytes[i*4 + 2] = UInt8((w >> 16) & 0xFF)
+                mixBytes[i*4 + 3] = UInt8((w >> 24) & 0xFF)
             }
             let mixHex = mixBytes.map { String(format: "%02x", $0) }.joined()
             let nonceHex = String(format: "%016llx", fullNonce)

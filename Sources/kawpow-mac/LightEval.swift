@@ -64,8 +64,9 @@ func calcDatasetItemCPU(cache: UnsafePointer<UInt8>, cacheNumNodes: UInt32, inde
         }
     }
 
-    // FNV1 rounds with cache parents
-    for j: UInt32 in 0..<256 {
+    // FNV1 rounds with cache parents. Ravencoin's KawPow uses
+    // full_dataset_item_parents=512 (NOT the standard ethash 256).
+    for j: UInt32 in 0..<512 {
         let h = fnv1(index ^ j, mix[Int(j & 15)])
         let parent = Int(h % cacheNumNodes)
         let pbase = parent * 64

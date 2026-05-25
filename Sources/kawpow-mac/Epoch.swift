@@ -160,11 +160,23 @@ func generateKernelSource(progSeed: UInt64) -> GeneratedKernel {
             randomMath += "  " + mergeStmt(dst: "the_mix[\(dst)]", src: "data", r: r) + "\n"
         }
         if i < KawPow.PROGPOW_CNT_MATH {
-            let src1 = Int(rnd.next() % UInt32(KawPow.PROGPOW_REGS))
-            let src2 = Int(rnd.next() % UInt32(KawPow.PROGPOW_REGS))
+            // ProgPoW spec generates BOTH src indices from ONE rnd() call and
+            // enforces src1 != src2:
+            //   src_rnd = rnd() % ((PROGPOW_REGS - 1) * PROGPOW_REGS)
+            //   src1 = src_rnd % PROGPOW_REGS
+            //   src2 = src_rnd / PROGPOW_REGS
+            //   if (src2 >= src1) ++src2
+            // (Previously we used two rnd() calls and skipped the uniqueness
+            //  check — that shifted every downstream rnd() by one slot and
+            //  caused the pool to compute a different hash than our kernel.)
+            let modulus = UInt32((KawPow.PROGPOW_REGS - 1) * KawPow.PROGPOW_REGS)
+            let srcRnd = Int(rnd.next() % modulus)
+            let src1 = srcRnd % KawPow.PROGPOW_REGS
+            var src2 = srcRnd / KawPow.PROGPOW_REGS
+            if src2 >= src1 { src2 += 1 }
             let rsel = rnd.next()
-            let rmerge = rnd.next()
             let dst = mixSeqDst[dstIdx % KawPow.PROGPOW_REGS]; dstIdx += 1
+            let rmerge = rnd.next()
             let expr = mathExpr(a: "the_mix[\(src1)]", b: "the_mix[\(src2)]", r: rsel)
             randomMath += "  // math \(i)\n"
             randomMath += "  data = \(expr);\n"

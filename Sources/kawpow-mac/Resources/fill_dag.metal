@@ -112,7 +112,10 @@ kernel void fill_dag_at_index(
     mix[0] ^= i;
     keccak512_64(mix);
 
-    for (uint j = 0; j < 256u; j++) {
+    // 512 parent-folding rounds (Ravencoin KawPow spec — full_dataset_item_parents=512).
+    // Standard ethash uses 256; Ravencoin doubled it. This is what controls whether the
+    // pool's reference hash agrees with ours.
+    for (uint j = 0; j < 512u; j++) {
         uint h = fnv1(i ^ j, mix[j & 15]);
         uint parent_idx = h % cache_num_nodes;
         for (int k = 0; k < 16; k++)
