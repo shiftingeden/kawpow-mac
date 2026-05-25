@@ -5,3 +5,4 @@ Package.resolved
 DerivedData/
 *.log
 config.local.json
+dist/
