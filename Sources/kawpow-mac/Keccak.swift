@@ -61,6 +61,58 @@ enum Keccak {
         }
     }
 
+    // ─── Fast specialization: keccak-512 of a 64-byte input ──────────────
+    // Used by cache + DAG generation. No allocations on the hot path.
+    // Padding for 64-byte input fitting one 72-byte block: lane 8 = 0x80…01.
+    @inline(__always)
+    static func keccak512_64(_ input: UnsafePointer<UInt8>, _ output: UnsafeMutablePointer<UInt8>) {
+        withUnsafeTemporaryAllocation(of: UInt64.self, capacity: 25) { state in
+            for i in 0..<25 { state[i] = 0 }
+            // Absorb 8 lanes from the 64-byte input (little-endian)
+            input.withMemoryRebound(to: UInt64.self, capacity: 8) { p64 in
+                for i in 0..<8 { state[i] = p64[i] }
+            }
+            // Padding lane: 0x01 at byte 0 (relative to lane), 0x80 at byte 7
+            state[8] = 0x8000000000000001
+            keccakF_ptr(state.baseAddress!)
+            // Squeeze 64 bytes from lanes 0..7
+            output.withMemoryRebound(to: UInt64.self, capacity: 8) { p64 in
+                for i in 0..<8 { p64[i] = state[i] }
+            }
+        }
+    }
+
+    // keccakF on a pointer state — same algorithm, no bounds checks.
+    @inline(__always)
+    private static func keccakF_ptr(_ st: UnsafeMutablePointer<UInt64>) {
+        withUnsafeTemporaryAllocation(of: UInt64.self, capacity: 5) { bc in
+            for round in 0..<24 {
+                for i in 0..<5 {
+                    bc[i] = st[i] ^ st[i+5] ^ st[i+10] ^ st[i+15] ^ st[i+20]
+                }
+                for i in 0..<5 {
+                    let t = bc[(i+4) % 5] ^ rol(bc[(i+1) % 5], 1)
+                    var j = 0
+                    while j < 25 { st[j+i] ^= t; j += 5 }
+                }
+                var t = st[1]
+                for i in 0..<24 {
+                    let j = PI[i]
+                    let tmp = st[j]
+                    st[j] = rol(t, ROTC[i])
+                    t = tmp
+                }
+                var j = 0
+                while j < 25 {
+                    for i in 0..<5 { bc[i] = st[j+i] }
+                    for i in 0..<5 { st[j+i] ^= (~bc[(i+1) % 5]) & bc[(i+2) % 5] }
+                    j += 5
+                }
+                st[0] ^= RC[round]
+            }
+        }
+    }
+
     // Generic sponge absorb+squeeze for fixed-output Keccak hashes used by ethash.
     static func hash(_ input: [UInt8], outputBytes: Int, blockBytes: Int) -> [UInt8] {
         precondition(blockBytes % 8 == 0)

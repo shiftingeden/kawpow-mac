@@ -50,7 +50,12 @@ let port: UInt16 = 3333
 let workerUser = "LTC:ltc1qw7ffr4hjqytukym0yvkrnsgxharjqs86z3c9wh.M5dev"
 
 let client = StratumClient(host: host, port: port)
-var submitted = false
+guard let miner = Miner() else { print("no Metal device"); exit(1) }
+miner.onShare = { jobId, nonce, header, mix in
+    print("[main] submitting share jobId=\(jobId) nonce=\(nonce)")
+    client.submitShare(workerName: workerUser, jobId: jobId, nonce: nonce, headerHash: header, mixHash: mix)
+}
+miner.startMiningLoop()
 
 client.onConnected = {
     client.subscribe()
@@ -68,19 +73,16 @@ client.onSetDifficulty = { d in
 }
 
 client.onNotify = { jobId, headerHash, seedHash, shareTarget, cleanJobs, blockHeight, bits in
-    print("[main] JOB jobId=\(jobId) height=\(blockHeight) cleanJobs=\(cleanJobs) bits=\(bits)")
-    print("[main]   header=\(headerHash)")
-    print("[main]   seed  =\(seedHash)")
-    print("[main]   target=\(shareTarget)")
-    print("[main]   kernel target literal=\(Target.metalLiteral(for: shareTarget))")
-
-    let seed = KawPow.progSeed(forBlockHeight: blockHeight)
-    print("[main]   prog_seed = \(seed) (KAWPOW_PERIOD=\(KawPow.KAWPOW_PERIOD))")
-    let gen = generateKernelSource(progSeed: seed)
-    print("[main]   RANDOM_MATH first lines:")
-    gen.randomMath.split(separator: "\n").prefix(6).forEach { print("[main]     \($0)") }
-    print("[main]   DATA_LOADS:")
-    gen.dataLoads.split(separator: "\n").forEach { print("[main]     \($0)") }
+    print("[main] JOB jobId=\(jobId) height=\(blockHeight) cleanJobs=\(cleanJobs)")
+    let job = MiningJob(
+        jobId: jobId,
+        headerHashHex: headerHash,
+        seedHashHex: seedHash,
+        shareTargetHex: shareTarget,
+        blockHeight: blockHeight,
+        cleanJobs: cleanJobs
+    )
+    miner.updateJob(job)
 }
 
 client.onError = { err in
