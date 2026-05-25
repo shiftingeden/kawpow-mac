@@ -216,6 +216,14 @@ final class Miner {
         enc.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
         enc.endEncoding()
 
+        // Emit thinminerpro-compatible batch line so Unmineable-Mac's frontend
+        // hashrate parser (client/src/util/mining.js) picks up the GPU rate.
+        // Format: "Computing <N> nonces starting at <X> <YYYY-MM-DD HH:MM:SS> +0000"
+        let tsFmt = DateFormatter()
+        tsFmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        tsFmt.timeZone = TimeZone(identifier: "UTC")
+        print("Computing \(batchNonces) nonces starting at \(baseNonce) \(tsFmt.string(from: Date())) +0000")
+
         let t0 = Date()
         cb.commit()
         cb.waitUntilCompleted()
@@ -237,17 +245,22 @@ final class Miner {
             let nonce32 = r[0]
             // Reconstruct the full 64-bit nonce: high32 = (baseNonce >> 32), low32 = nonce32
             let fullNonce = (baseNonce & 0xFFFFFFFF00000000) | UInt64(nonce32)
+            // Submit mix_hash with bytes per-uint32 in BIG-endian order — this is what the
+            // standard ProgPoW/KawPow stratum wire format expects (each 4-byte word's MSB first).
             var mixBytes = [UInt8](repeating: 0, count: 32)
             for i in 0..<8 {
                 let w = r[1 + i]
-                mixBytes[i*4 + 0] = UInt8(w & 0xFF)
-                mixBytes[i*4 + 1] = UInt8((w >> 8) & 0xFF)
-                mixBytes[i*4 + 2] = UInt8((w >> 16) & 0xFF)
-                mixBytes[i*4 + 3] = UInt8((w >> 24) & 0xFF)
+                mixBytes[i*4 + 0] = UInt8((w >> 24) & 0xFF)
+                mixBytes[i*4 + 1] = UInt8((w >> 16) & 0xFF)
+                mixBytes[i*4 + 2] = UInt8((w >> 8) & 0xFF)
+                mixBytes[i*4 + 3] = UInt8(w & 0xFF)
             }
             let mixHex = mixBytes.map { String(format: "%02x", $0) }.joined()
             let nonceHex = String(format: "%016llx", fullNonce)
+            // Also log the raw kernel uint32s for postmortem diagnosis if pool keeps rejecting.
+            let rawU32 = (0..<9).map { String(format: "%08x", r[$0]) }.joined(separator: " ")
             print("[miner] *** SHARE FOUND *** nonce=\(nonceHex) mix=\(mixHex)")
+            print("[miner]     raw kernel results[0..8]: \(rawU32)")
             onShare?(job.jobId, "0x" + nonceHex, "0x" + job.headerHashHex, "0x" + mixHex)
         }
 
