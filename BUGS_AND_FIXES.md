@@ -132,27 +132,35 @@ block=49   mix ✓    final ✓
 
 ## Other things found along the way (not bugs but surprises)
 
-- **Pool URL**: unmineable's KawPow endpoint is `ethash.unmineable.com:3333`,
-  not `kp.unmineable.com:3333` (which older Thinminerpro releases pinned).
-  The `kp.unmineable.com` host is a stale endpoint that returns mismatched
-  validation responses.
+- **Pool URL**: unmineable's KawPow endpoint is `kp.unmineable.com:3333`
+  — the same one older Thinminerpro releases use. We briefly switched
+  to `ethash.unmineable.com:3333` mid-debug on a hunch, but that turned
+  out to be unmineable's *ETHash* pool (Ethereum-Classic-style chain at
+  height 24M+, 30000-block epochs). Switching back to `kp.unmineable.com`
+  with all 5 fixes applied was what finally got an accepted share.
 
-- **Stratum dialect on ethash.unmineable.com is different**:
-  - notify has **5 params** (`[jobId, header, seed, target, cleanJobs]`),
-    not the 7 of older ProgPoW pools
-  - `height` is a **top-level field** on the message, not in `params`
-  - All hex values carry `0x` prefix
-  - Pool's `height` field is a **pool-internal counter**, not the on-chain
-    block height. The authoritative epoch comes from reverse-deriving the
-    seed (iterating `keccak256(0)`).
+- **Two stratum dialects exist on unmineable's pools**, and our parser
+  handles both:
+  - `kp.unmineable.com` uses the **7-param ProgPoW notify**
+    (`[jobId, headerHash, seedHash, shareTarget, cleanJobs, blockHeight, bits]`),
+    no `0x` prefix on hex values, `blockHeight` in params.
+  - `ethash.unmineable.com` uses the **5-param Ethereum-style notify**
+    with `0x` prefix and `height` as a top-level message field. Used by
+    pools mining ETHash chains, not KawPow.
+
+- **Seed→epoch reverse derivation** (iterating `keccak256(0)` until the
+  result matches the pool's seed_hash) is the authoritative way to get
+  the real epoch when the pool's `height` field is a pool-internal
+  counter rather than the on-chain block height. Belt-and-suspenders.
 
 - **First letter of `ravencoin_rndc` is `0x72` ('r' lowercase)**, not
   `0x52` ('R'). The constant array spells "rAVENCOINKAWPOW" with the
   first letter lowercase — known quirk in the spec, present in
   kawpowminer and Ravencoin reference too.
 
-- **DAG size**: for unmineable's KawPow pool, epoch 810 gives a 7.87 GB
-  DAG. Tight on a 16 GB Mac but works.
+- **DAG size**: at Ravencoin epoch 584 (current as of testing), the
+  full ethash DAG is ~5.56 GB on disk/RAM. Tight on a 16 GB Mac
+  but builds in ~30s on M5 with our optimized Keccak.
 
 - **Race-fix combined with the algorithm fixes** is what made the
   diagnostic finally have signal. Before the race fix, error patterns

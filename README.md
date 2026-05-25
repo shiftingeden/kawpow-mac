@@ -10,16 +10,19 @@ newer chips. This is a clean rewrite using the verified kernel + the public KawP
 
 ## Status
 
-Algorithm spec-compliant; live-pool acceptance pending verification.
+**✅ Working** — accepts shares against unMineable's KawPow pool on
+modern Apple Silicon (verified on M5 MacBook Air, 2026-05-25). First
+open-source KawPow miner known to do this on M3+ chips.
 
 - [x] M0: kernel verified working on M5 (extracted + tested standalone)
-- [x] M1: project skeleton + stratum client (connects to `ethash.unmineable.com:3333`)
-- [x] M2: target conversion + submit wire format (pool processes submits)
+- [x] M1: project skeleton + stratum client
+- [x] M2: target conversion + submit wire format
 - [x] M3: KawPow per-epoch RANDOM_MATH + DATA_LOADS generator
-- [x] M4: DAG generation (light cache + 7.3 GB DAG GPU fill in ~42s)
-- [x] M5: mining loop integration (PSO cache, atomic results, ~2.7 MH/s on M5 Air)
-- [x] **M6: spec-compliant against Ravencoin's official progpow_hash test vectors** — block 0 and block 49 match mix_hash + final_hash bitwise
-- [ ] M7: live on unmineable — verification pending (run scheduled; awaiting first accepted share)
+- [x] M4: DAG generation (light cache + 5.5 GB DAG GPU fill in ~30s on M5)
+- [x] M5: mining loop integration (PSO cache, atomic results, ~2.7 MH/s)
+- [x] M6: spec-compliant against Ravencoin's official progpow_hash test vectors
+- [x] **M7: live on unmineable — first accepted share at jobId `3d56a`,
+      pool replied `{"id":3,"result":true,"error":null}`** ✅
 
 ### Bugs found and fixed along the way
 

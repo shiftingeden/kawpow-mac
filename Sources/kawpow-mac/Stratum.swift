@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 // Minimal Stratum (Mining v1) client over plain TCP.
-// Used against unmineable's ethash.unmineable.com:3333 (KawPow / ProgPoW pool).
+// Used against unmineable's kp.unmineable.com:3333 (KawPow / ProgPoW pool).
 // Messages are newline-terminated JSON-RPC blobs.
 
 struct StratumMessage: Decodable {
@@ -126,7 +126,7 @@ final class StratumClient {
     private func handleNotification(method: String, params: Any?, topLevel: [String: Any]) {
         switch method {
         case "mining.notify":
-            // unMineable's ethash.unmineable.com pool uses an ethash-style notify:
+            // unMineable's kp.unmineable.com pool uses an ethash-style notify:
             //   params: ["0x<jobId>", "0x<headerHash>", "0x<seedHash>", "0x<target>", cleanJobs]
             //   AND a top-level "height" field on the message itself.
             // Older kp.unmineable.com used a 7-param ProgPoW notify (kept for backward
