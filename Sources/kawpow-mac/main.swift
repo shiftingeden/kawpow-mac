@@ -5,6 +5,7 @@ import Metal
 setbuf(stdout, nil) // unbuffered output so logs flush in real time
 
 runSelfTests()
+_ = keccak800CrossCheck()
 
 // CLI: `kawpow-mac dag-test [epoch] [dagBytesCap]`
 // Builds the DAG to verify M4 end-to-end without entering the mining loop.
@@ -55,7 +56,17 @@ print("[kawpow-mac] host=\(host) port=\(port) user=\(workerUser)\(cfg == nil ? "
 
 let client = StratumClient(host: host, port: port)
 guard let miner = Miner() else { print("no Metal device"); exit(1) }
+// Throttle submits to avoid flooding the pool when running with
+// KAWPOW_FORCED_TARGET (where shares appear faster than once per second).
+var lastSubmitAt = Date(timeIntervalSince1970: 0)
+let submitMinInterval: TimeInterval = 0.5
 miner.onShare = { jobId, nonce, header, mix in
+    let now = Date()
+    if now.timeIntervalSince(lastSubmitAt) < submitMinInterval {
+        print("[main] (throttled — last submit \(String(format: "%.2f", now.timeIntervalSince(lastSubmitAt)))s ago)")
+        return
+    }
+    lastSubmitAt = now
     print("[main] submitting share jobId=\(jobId) nonce=\(nonce)")
     client.submitShare(workerName: workerUser, jobId: jobId, nonce: nonce, headerHash: header, mixHash: mix)
 }

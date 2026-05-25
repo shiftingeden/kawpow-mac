@@ -123,7 +123,20 @@ final class Miner {
         guard let dag = dagOut else { return }
         let dagElements = dag.dagNumItems / 16
         lastDagElements = dagElements
-        let newTarget = Target.kernelTargetFromPoolTarget(job.shareTargetHex)
+        // Debug-only override: if KAWPOW_FORCED_TARGET is set in the environment
+        // (hex, with or without "0x"), use that uint64 as the kernel-side
+        // share-difficulty target. The pool will reject everything as
+        // "Low difficulty share" — that's the point: we just want fast
+        // pool-response signal to verify our submit wire format and the
+        // mix_hash matching path.
+        let envOverride = ProcessInfo.processInfo.environment["KAWPOW_FORCED_TARGET"].flatMap { raw -> UInt64? in
+            let s = raw.lowercased().hasPrefix("0x") ? String(raw.dropFirst(2)) : raw
+            return UInt64(s, radix: 16)
+        }
+        let newTarget = envOverride ?? Target.kernelTargetFromPoolTarget(job.shareTargetHex)
+        if envOverride != nil && lastTargetUInt64 == 0 {
+            print("[miner] DEBUG: forcing kernel target to 0x\(String(newTarget, radix: 16)) (KAWPOW_FORCED_TARGET) — pool will reject all shares")
+        }
         if newTarget != lastTargetUInt64 && lastTargetUInt64 != 0 {
             // Target bakes into the kernel — invalidate cache on change.
             print("[miner] target changed 0x\(String(lastTargetUInt64, radix: 16)) → 0x\(String(newTarget, radix: 16)); flushing PSO cache")
