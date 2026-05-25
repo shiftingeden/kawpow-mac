@@ -38,6 +38,11 @@ final class StratumClient {
     private var buffer = Data()
     private var nextId = 1
 
+    // Track which outgoing message ids are share submits so we can label
+    // their responses cleanly as "[share] accepted" / "[share] rejected".
+    // (Subscribe/authorize and any future RPCs are skipped.)
+    private var submitIds: Set<Int> = []
+
     var onNotify: NotifyHandler?
     var onSetTarget: ((String) -> Void)?
     var onSetDifficulty: ((Double) -> Void)?
@@ -186,9 +191,27 @@ final class StratumClient {
     }
 
     private func handleResponse(id: Int, json: [String: Any]) {
-        // For v1 we just log responses; submit/subscribe/authorize callers can match by id later.
-        if let err = json["error"], !(err is NSNull) {
-            print("[stratum] response id=\(id) ERROR: \(err)")
+        let isSubmit = submitIds.remove(id) != nil
+        let errVal = json["error"]
+        let hasError = errVal != nil && !(errVal is NSNull)
+
+        if isSubmit {
+            // Tagged log line so the Unmineable-Mac frontend can count
+            // accepted vs rejected GPU shares without regex-parsing JSON.
+            if hasError {
+                let reason: String = {
+                    if let dict = errVal as? [Any], dict.count >= 2, let msg = dict[1] as? String { return msg }
+                    if let dict = errVal as? [String: Any], let msg = dict["message"] as? String { return msg }
+                    return "\(errVal ?? "unknown")"
+                }()
+                print("[share] rejected: \(reason)")
+            } else {
+                print("[share] accepted")
+            }
+        }
+
+        if hasError {
+            print("[stratum] response id=\(id) ERROR: \(errVal ?? "")")
         } else {
             print("[stratum] response id=\(id) OK: result=\(json["result"] ?? "nil")")
         }
@@ -231,6 +254,7 @@ final class StratumClient {
 
     func submitShare(workerName: String, jobId: String, nonce: String, headerHash: String, mixHash: String) {
         // Standard ProgPoW/KawPow submit: [worker, jobId, nonceHex, headerHashHex, mixHashHex]
-        send(method: "mining.submit", params: [workerName, jobId, nonce, headerHash, mixHash])
+        let id = send(method: "mining.submit", params: [workerName, jobId, nonce, headerHash, mixHash])
+        submitIds.insert(id)
     }
 }
