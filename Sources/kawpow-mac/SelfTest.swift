@@ -70,4 +70,19 @@ func runSelfTests() {
     precondition(cs == 93_322_816, "cacheSize wrong: expected 93322816, got \(cs)")
     precondition(nodes == 1_458_169, "cache nodes wrong: expected 1458169, got \(nodes)")
     print("[selftest] cacheSize matches thinminerpro log for epoch \(ep)")
+
+    // ──────────────────────────────────────────────────────────────────
+    // 5) Seed hash for epoch 584 must match what thinminerpro logged:
+    //   [230, 71, 113, 214, 169, 12, 186, 214, 237, 145, 72, 142, 211, 123,
+    //    103, 17, 83, 176, 135, 191, 202, 28, 229, 60, 15, 251, 173, 174,
+    //    46, 60, 222, 158]
+    // ──────────────────────────────────────────────────────────────────
+    let expectedSeed: [UInt8] = [
+        230, 71, 113, 214, 169, 12, 186, 214, 237, 145, 72, 142, 211, 123, 103, 17,
+        83, 176, 135, 191, 202, 28, 229, 60, 15, 251, 173, 174, 46, 60, 222, 158
+    ]
+    let ourSeed = Ethash.seedHash(epoch: ep)
+    precondition(ourSeed == expectedSeed,
+                 "seedHash for epoch \(ep) wrong:\n  ours: \(hex(ourSeed))\n  thin: \(hex(expectedSeed))")
+    print("[selftest] seedHash(epoch=\(ep)) matches thinminerpro: \(hex(ourSeed).prefix(16))…")
 }
