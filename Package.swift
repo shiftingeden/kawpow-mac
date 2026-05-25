@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "kawpow-mac",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v12)],
     targets: [
         .executableTarget(
             name: "kawpow-mac",
